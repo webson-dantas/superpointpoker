@@ -25,8 +25,8 @@ A lightweight, real-time planning poker app built with Streamlit. No database re
 1. **Clone the repository**
 
    ```bash
-   git clone <your-repo-url>
-   cd superpointpoker
+   git clone ssh://git@ssh.sources.hexagonmining.com/~fiw/super-point-poker.git
+   cd super-point-poker
    ```
 
 2. **Install dependencies**
