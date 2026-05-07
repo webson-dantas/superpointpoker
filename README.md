@@ -1,4 +1,4 @@
-# 🃏 SuperPoint Poker
+# 🃏 Super Point Poker
 
 Planning Poker for agile teams — with love, by Webson <3
 
