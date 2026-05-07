@@ -1,4 +1,4 @@
-"""Launcher for SuperPoint Poker. Run with --http or --https (default: --https)."""
+"""Launcher for Super Point Poker. Run with --http or --https (default: --https)."""
 import sys
 import os
 import subprocess
@@ -113,7 +113,7 @@ def main():
 
     print()
     print("=" * 60)
-    print("  🃏 SuperPoint Poker is LIVE!")
+    print("  🃏 Super Point Poker is LIVE!")
     print("=" * 60)
     print()
     if public_url:
