@@ -99,6 +99,22 @@ def render_session_view():
                 clear_session_storage()
                 st.rerun()
 
+    # --- Role picker (non-host can change role without leaving) ---
+    available_roles = ["Dev", "QA", "PO", "Observer"]
+    if is_host:
+        available_roles = ["Hoster"] + available_roles
+    current_index = available_roles.index(my_role) if my_role in available_roles else 0
+    col_role, _ = st.columns([2, 4])
+    with col_role:
+        new_role = st.selectbox("Your role", available_roles, index=current_index, key="role_picker")
+    if new_role != my_role:
+        with shared["lock"]:
+            session["participants"][user_id]["role"] = new_role
+            # Clear vote if switching to a non-voting role
+            if new_role == "Observer":
+                session["participants"][user_id]["vote"] = None
+        st.rerun()
+
     st.divider()
 
     # --- Host Controls ---
