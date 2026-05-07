@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import threading
 import uuid
 import sys
@@ -21,11 +22,11 @@ def get_shared_state():
         "sessions": {},
         "lock": threading.Lock(),
         "heartbeat_lock": threading.Lock(),
-        "last_cleanup_time": 0,
     }
 
 
 FIBONACCI = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89]
+DEFAULT_VOTE_BUTTONS = "0;1;2;3;5;8;13;21;X"
 
 
 def closest_fibonacci(value):
@@ -60,6 +61,7 @@ def create_session(state, session_name, host_name, host_id):
             "hoster_votes": False,
             "anyone_can_reveal": False,
             "block_vote_after_reveal": False,
+            "vote_buttons": DEFAULT_VOTE_BUTTONS,
             "host_heartbeat": time.time(),
             "last_vote_time": time.time(),
             "history": [],
@@ -71,12 +73,20 @@ def create_session(state, session_name, host_name, host_id):
 def join_session(state, session_id, user_id, user_name, role):
     with state["lock"]:
         if session_id in state["sessions"]:
-            state["sessions"][session_id]["participants"][user_id] = {
-                "name": user_name,
-                "role": role,
-                "vote": None,
-                "heartbeat": time.time(),
-            }
+            session = state["sessions"][session_id]
+            existing = session["participants"].get(user_id)
+            if existing:
+                # Reconnect: update name/role/heartbeat, preserve vote
+                existing["name"] = user_name
+                existing["role"] = role
+                existing["heartbeat"] = time.time()
+            else:
+                session["participants"][user_id] = {
+                    "name": user_name,
+                    "role": role,
+                    "vote": None,
+                    "heartbeat": time.time(),
+                }
             return True
     return False
 
@@ -92,7 +102,7 @@ def cast_vote(state, session_id, user_id, vote_value):
             session["last_vote_time"] = time.time()
             # Auto-reveal: check if all eligible voters have voted
             hoster_votes = session.get("hoster_votes", False)
-            voting_roles = ("Dev", "QA")
+            voting_roles = ("Dev", "QA", "PO")
             all_voted = all(
                 p["vote"] is not None
                 for p in session["participants"].values()
@@ -124,7 +134,7 @@ def clear_votes(state, session_id):
             votes = {}
             hoster_votes_on = session.get("hoster_votes", False)
             for p in session["participants"].values():
-                is_voter = p["role"] in ("Dev", "QA") or (p["role"] == "Hoster" and hoster_votes_on)
+                is_voter = p["role"] in ("Dev", "QA", "PO") or (p["role"] == "Hoster" and hoster_votes_on)
                 if is_voter and p["vote"] is not None:
                     vote_display = "Null" if p["vote"] == "null" else str(p["vote"])
                     votes[p["name"]] = vote_display
@@ -153,12 +163,12 @@ def calculate_averages(session, separate_qa=False):
     hoster_votes = session.get("hoster_votes", False)
 
     def is_voter(p):
-        return p["role"] in ("Dev", "QA") or (p["role"] == "Hoster" and hoster_votes)
+        return p["role"] in ("Dev", "QA", "PO") or (p["role"] == "Hoster" and hoster_votes)
 
     if separate_qa:
         dev_votes = [
             p["vote"] for p in session["participants"].values()
-            if (p["role"] == "Dev" or (p["role"] == "Hoster" and hoster_votes))
+            if (p["role"] in ("Dev", "PO") or (p["role"] == "Hoster" and hoster_votes))
             and p["vote"] is not None and p["vote"] != "null"
         ]
         qa_votes = [
@@ -214,33 +224,6 @@ def kick_participant(state, session_id, target_user_id):
             del session["participants"][target_user_id]
 
 
-def cleanup_stale_participants(state, session_id):
-    """Remove participants who haven't sent a heartbeat in 60+ seconds (except host)."""
-    now = time.time()
-    with state["lock"]:
-        session = state["sessions"].get(session_id)
-        if not session:
-            return
-        host_id = session["host_id"]
-        stale = [
-            pid for pid, p in session["participants"].items()
-            if pid != host_id and now - p.get("heartbeat", now) > 60
-        ]
-        for pid in stale:
-            del session["participants"][pid]
-
-
-def cleanup_stale_sessions(state):
-    """Remove sessions where the hoster hasn't sent a heartbeat in 60+ seconds."""
-    now = time.time()
-    with state["lock"]:
-        stale = [
-            sid for sid, s in state["sessions"].items()
-            if now - s.get("host_heartbeat", now) > 60
-        ]
-        for sid in stale:
-            del state["sessions"][sid]
-
 
 # ---------------------------------------------------------------------------
 # Streamlit App
@@ -270,6 +253,62 @@ if "current_session" not in st.session_state:
 if "user_name" not in st.session_state:
     st.session_state.user_name = ""
 
+# Restore nickname and user_id from localStorage via query param on first load
+if "name_loaded" not in st.session_state:
+    st.session_state.name_loaded = True
+    saved = st.query_params.get("saved_name")
+    saved_uid = st.query_params.get("saved_uid")
+    if saved:
+        st.session_state.user_name = saved
+    if saved_uid:
+        st.session_state.user_id = saved_uid
+    # Clear the params so they don't stick in the URL
+    if saved or saved_uid:
+        params = dict(st.query_params)
+        params.pop("saved_name", None)
+        params.pop("saved_uid", None)
+        st.query_params.update(params)
+
+
+def _inject_localstorage_reader():
+    """Inject JS that reads nickname and user_id from localStorage and redirects once if found."""
+    components.html("""
+    <script>
+    (function() {
+        const name = localStorage.getItem('spp_nickname');
+        const uid = localStorage.getItem('spp_user_id');
+        const url = new URL(window.parent.location.href);
+        if ((name || uid) && !url.searchParams.has('saved_name') && !url.searchParams.has('session')) {
+            let changed = false;
+            if (name && url.searchParams.get('saved_name') !== name) {
+                url.searchParams.set('saved_name', name);
+                changed = true;
+            }
+            if (uid && url.searchParams.get('saved_uid') !== uid) {
+                url.searchParams.set('saved_uid', uid);
+                changed = true;
+            }
+            if (changed) {
+                window.parent.location.href = url.toString();
+            }
+        }
+    })();
+    </script>
+    """, height=0)
+
+
+def _inject_localstorage_writer(name):
+    """Inject JS that saves the nickname and user_id to localStorage."""
+    import html
+    safe_name = html.escape(name, quote=True)
+    uid = st.session_state.user_id
+    components.html(f"""
+    <script>
+    localStorage.setItem('spp_nickname', "{safe_name}");
+    localStorage.setItem('spp_user_id', "{uid}");
+    </script>
+    """, height=0)
+
 shared = get_shared_state()
 
 
@@ -290,13 +329,6 @@ def render_session_view():
     # Auto-refresh every 2 seconds (reduces server load with many users)
     st_autorefresh(interval=2000, key="session_refresh")
 
-    # Throttled cleanup: only run every 10 seconds instead of every render
-    now = time.time()
-    if now - shared["last_cleanup_time"] > 10:
-        shared["last_cleanup_time"] = now
-        cleanup_stale_sessions(shared)
-        cleanup_stale_participants(shared, session_id)
-
     user_id = st.session_state.user_id
     is_host = session["host_id"] == user_id
     my_info = session["participants"].get(user_id)
@@ -306,15 +338,6 @@ def render_session_view():
         st.session_state.current_session = None
         st.rerun()
         return
-
-    # Heartbeat update (uses separate lock to avoid contention with votes/state)
-    if is_host:
-        with shared["heartbeat_lock"]:
-            session["host_heartbeat"] = time.time()
-            my_info["heartbeat"] = time.time()
-    else:
-        with shared["heartbeat_lock"]:
-            my_info["heartbeat"] = time.time()
 
     my_role = my_info["role"]
 
@@ -405,6 +428,29 @@ def render_session_view():
                 with shared["lock"]:
                     session["block_vote_after_reveal"] = block_vote_toggle
 
+            # Vote buttons customization
+            st.markdown("---")
+            st.markdown("**Vote buttons** (semicolon-separated, use `X` for null/coffee vote)")
+            current_buttons = session.get("vote_buttons", DEFAULT_VOTE_BUTTONS)
+            # Handle revert from previous click
+            if st.session_state.get("_revert_vote_buttons"):
+                st.session_state._revert_vote_buttons = False
+                current_buttons = DEFAULT_VOTE_BUTTONS
+            btn_col1, btn_col2 = st.columns([4, 1])
+            with btn_col1:
+                new_buttons = st.text_input("Vote options", value=current_buttons, key="vote_buttons_input", label_visibility="collapsed")
+            with btn_col2:
+                if st.button("↩️ Default", key="revert_vote_buttons"):
+                    with shared["lock"]:
+                        session["vote_buttons"] = DEFAULT_VOTE_BUTTONS
+                    st.session_state._revert_vote_buttons = True
+                    st.rerun()
+            if new_buttons != current_buttons:
+                with shared["lock"]:
+                    session["vote_buttons"] = new_buttons
+                if new_buttons == DEFAULT_VOTE_BUTTONS:
+                    st.rerun()
+
         st.divider()
 
     # --- Reveal button for non-host if "anyone can reveal" is enabled ---
@@ -415,7 +461,7 @@ def render_session_view():
 
     # --- Voting UI (Dev/QA only, or Hoster if hoster_votes enabled) ---
     hoster_votes = session.get("hoster_votes", False)
-    can_vote = my_role in ("Dev", "QA") or (my_role == "Hoster" and hoster_votes)
+    can_vote = my_role in ("Dev", "QA", "PO") or (my_role == "Hoster" and hoster_votes)
 
     # Block voting UI if votes are revealed and block setting is on
     votes_blocked = session.get("block_vote_after_reveal", False) and session["votes_revealed"]
@@ -425,8 +471,23 @@ def render_session_view():
         st.warning("🔒 Voting is locked — votes have been revealed.")
     elif can_vote:
         st.subheader("Cast Your Vote")
-        vote_options = [0, 1, 2, 3, 5, 8, 13, 21, "Null Vote"]
-        cols = st.columns(len(vote_options))
+        # Parse vote buttons from session config
+        button_str = session.get("vote_buttons", DEFAULT_VOTE_BUTTONS)
+        raw_options = [s.strip() for s in button_str.split(";") if s.strip()]
+        vote_options = []
+        for opt in raw_options:
+            if opt.upper() == "X":
+                vote_options.append("Null Vote")
+            else:
+                try:
+                    vote_options.append(int(opt))
+                except ValueError:
+                    try:
+                        vote_options.append(float(opt))
+                    except ValueError:
+                        pass  # skip invalid entries
+
+        cols = st.columns(len(vote_options)) if vote_options else []
         for i, option in enumerate(vote_options):
             with cols[i]:
                 label = "☕" if option == "Null Vote" else str(option)
@@ -475,7 +536,7 @@ def render_session_view():
         # Calculate pending percentage for the shame animation
         hoster_votes_enabled = session.get("hoster_votes", False)
         voters = [p for p in session["participants"].values()
-                  if p["role"] in ("Dev", "QA") or (p["role"] == "Hoster" and hoster_votes_enabled)]
+                  if p["role"] in ("Dev", "QA", "PO") or (p["role"] == "Hoster" and hoster_votes_enabled)]
         total_voters = len(voters)
         pending_voters = [p for p in voters if p["vote"] is None]
         pending_count = len(pending_voters)
@@ -504,7 +565,7 @@ def render_session_view():
             """, unsafe_allow_html=True)
 
         for pid, pinfo in session["participants"].items():
-            role_emoji = {"Dev": "💻", "QA": "🧪", "Observer": "👀", "Hoster": "👑"}.get(pinfo["role"], "")
+            role_emoji = {"Dev": "💻", "QA": "🧪", "PO": "📊", "Observer": "👀", "Hoster": "👑"}.get(pinfo["role"], "")
             name_display = f"{role_emoji} {pinfo['name']} ({pinfo['role']})"
 
             is_non_voter = pinfo["role"] == "Observer" or (pinfo["role"] == "Hoster" and not hoster_votes_enabled)
@@ -605,7 +666,7 @@ def render_session_view():
         .dvd-turtle {
             position: fixed;
             font-size: 50px;
-            z-index: 9999;
+            z-index: 99999999;
             pointer-events: none;
             animation:
                 dvd-bounce-x 7.3s linear infinite,
@@ -638,6 +699,13 @@ def render_lobby():
     if name != st.session_state.user_name:
         st.session_state.user_name = name
 
+    # Save nickname to localStorage whenever it's set
+    if st.session_state.user_name.strip():
+        _inject_localstorage_writer(st.session_state.user_name)
+    else:
+        # Load from localStorage if name is empty
+        _inject_localstorage_reader()
+
     if not st.session_state.user_name.strip():
         st.warning("Please enter your name to continue.")
         return
@@ -651,7 +719,7 @@ def render_lobby():
     if not sessions:
         st.info("No active sessions yet.")
     else:
-        role = st.selectbox("Your role", ["Dev", "QA", "Observer"], index=0)
+        role = st.selectbox("Your role", ["Dev", "QA", "PO", "Observer"], index=0)
 
         for sid, sdata in list(sessions.items()):
             participant_count = len(sdata["participants"])
@@ -710,7 +778,7 @@ def render_join_via_link(session_id):
     st.divider()
 
     name = st.text_input("Your display name (emojis welcome!)", value=st.session_state.user_name, key="join_link_name", placeholder="e.g. 🚀 Carlos")
-    role = st.selectbox("Your role", ["Dev", "QA", "Observer"], index=0, key="join_link_role")
+    role = st.selectbox("Your role", ["Dev", "QA", "PO", "Observer"], index=0, key="join_link_role")
 
     if st.button("🎉 Join Session", type="primary"):
         if not name.strip():
