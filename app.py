@@ -432,24 +432,20 @@ def render_session_view():
             st.markdown("---")
             st.markdown("**Vote buttons** (semicolon-separated, use `X` for null/coffee vote)")
             current_buttons = session.get("vote_buttons", DEFAULT_VOTE_BUTTONS)
-            # Handle revert from previous click
-            if st.session_state.get("_revert_vote_buttons"):
-                st.session_state._revert_vote_buttons = False
-                current_buttons = DEFAULT_VOTE_BUTTONS
+            # Use a version counter to force widget reset on revert
+            vb_version = st.session_state.get("_vb_version", 0)
             btn_col1, btn_col2 = st.columns([4, 1])
             with btn_col1:
-                new_buttons = st.text_input("Vote options", value=current_buttons, key="vote_buttons_input", label_visibility="collapsed")
+                new_buttons = st.text_input("Vote options", value=current_buttons, key=f"vote_buttons_input_{vb_version}", label_visibility="collapsed")
             with btn_col2:
                 if st.button("↩️ Default", key="revert_vote_buttons"):
                     with shared["lock"]:
                         session["vote_buttons"] = DEFAULT_VOTE_BUTTONS
-                    st.session_state._revert_vote_buttons = True
+                    st.session_state._vb_version = vb_version + 1
                     st.rerun()
             if new_buttons != current_buttons:
                 with shared["lock"]:
                     session["vote_buttons"] = new_buttons
-                if new_buttons == DEFAULT_VOTE_BUTTONS:
-                    st.rerun()
 
         st.divider()
 
