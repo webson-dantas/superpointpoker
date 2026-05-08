@@ -70,7 +70,7 @@ def render_session_view():
     # Hidden button triggered by clicking the emoji via JS
     if st.button("spawn_turtle", key="spawn_turtle_btn"):
         with shared["lock"]:
-            session["last_vote_time"] = session.get("last_vote_time", time.time()) - 120
+            session["last_vote_time"] = session.get("last_vote_time", time.time()) - 300
     import html as html_mod
     safe_name = html_mod.escape(session['name'])
     st.markdown(f"""
@@ -578,8 +578,8 @@ def render_session_view():
     # --- DVD Bouncing Turtle (appears after 2 min of inactivity, multiplies every 2 min up to max) ---
     max_turtles = st.session_state.get("max_turtles", 5)
     idle_seconds = time.time() - session.get("last_vote_time", time.time())
-    if idle_seconds > 120 and max_turtles > 0:
-        turtle_count = min(int(idle_seconds // 120), max_turtles)
+    if idle_seconds > 300 and max_turtles > 0:
+        turtle_count = min(int(idle_seconds // 300), max_turtles)
         inject_turtle_animation(turtle_count)
     else:
         cleanup_turtles()
