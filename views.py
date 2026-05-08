@@ -194,8 +194,6 @@ def render_session_view():
                 with shared["lock"]:
                     session["vote_buttons"] = new_buttons
 
-    st.divider()
-
     # --- Host Controls ---
     if is_host:
         st.subheader("Host Controls")
@@ -216,8 +214,6 @@ def render_session_view():
             if st.button("🗑️ Clear Votes", type="secondary"):
                 clear_votes(shared, session_id)
                 st.rerun()
-
-        st.divider()
 
     # --- Reveal button for non-host if "anyone can reveal" is enabled ---
     if not is_host and session.get("anyone_can_reveal", False) and not session["votes_revealed"]:
@@ -253,6 +249,45 @@ def render_session_view():
                     except ValueError:
                         pass  # skip invalid entries
 
+        # Inject CSS for larger vote buttons (via components.html to reach parent document)
+        from streamlit.components.v1 import html as components_html
+        components_html("""
+        <script>
+        (function() {
+            const doc = window.parent.document;
+            // Inject style once
+            if (!doc.getElementById('spp-vote-btn-style')) {
+                const style = doc.createElement('style');
+                style.id = 'spp-vote-btn-style';
+                style.textContent = `
+                    .spp-vote-row [data-testid="stColumn"] [data-testid="stButton"] > button {
+                        font-size: 2rem !important;
+                        padding: 1.5rem 2rem !important;
+                        min-height: 5rem !important;
+                        min-width: 5rem !important;
+                        width: 100% !important;
+                        line-height: 1 !important;
+                    }
+                    .spp-vote-row [data-testid="stColumn"] [data-testid="stButton"] > button p {
+                        font-size: 2rem !important;
+                    }
+                `;
+                doc.head.appendChild(style);
+            }
+            // Tag the vote button row by finding buttons with keys starting with "vote_"
+            const allBtns = doc.querySelectorAll('button');
+            for (const b of allBtns) {
+                const key = b.closest('[data-testid="stButton"]');
+                if (!key) continue;
+                const wrapper = b.closest('[data-testid="stHorizontalBlock"]');
+                if (wrapper && b.textContent.match(/^(\\d+|☕)$/)) {
+                    wrapper.classList.add('spp-vote-row');
+                }
+            }
+        })();
+        </script>
+        """, height=0)
+
         cols = st.columns(len(vote_options)) if vote_options else []
         for i, option in enumerate(vote_options):
             with cols[i]:
@@ -262,19 +297,16 @@ def render_session_view():
                 btn_type = "primary" if is_selected else "secondary"
                 if st.button(label, key=f"vote_{i}_{option}", type=btn_type):
                     cast_vote(shared, session_id, user_id, vote_val)
+                    st.session_state.custom_vote_input = None
                     st.rerun()
 
-        # Custom vote input (numbers only)
-        custom_col1, custom_col2 = st.columns([2, 1])
-        with custom_col1:
-            custom_vote = st.number_input("Custom Vote:", min_value=0, max_value=999, value=None, step=1, key="custom_vote_input", placeholder="Any number")
-        with custom_col2:
-            st.write("")  # spacing
-            st.write("")
-            if st.button("Submit", key="custom_vote_btn"):
-                if custom_vote is not None:
-                    cast_vote(shared, session_id, user_id, int(custom_vote))
-                    st.rerun()
+        # Custom vote input (numbers only) — applied in real time via on_change
+        def _on_custom_vote():
+            val = st.session_state.custom_vote_input
+            if val is not None:
+                cast_vote(shared, session_id, user_id, int(val))
+
+        st.number_input("Custom Vote:", min_value=0, max_value=999, value=None, step=1, key="custom_vote_input", placeholder="Any number", on_change=_on_custom_vote)
 
         if my_info["vote"] is not None:
             display_vote = "Null Vote" if my_info["vote"] == "null" else my_info["vote"]
@@ -283,8 +315,6 @@ def render_session_view():
         st.info("👑 You are the Hoster — you manage the session but do not vote.")
     else:
         st.info("👀 You are an Observer — you cannot vote.")
-
-    st.divider()
 
     # --- Participants & Votes + Averages side by side ---
     col_left, col_right = st.columns([3, 2])
@@ -392,7 +422,6 @@ def render_session_view():
     # --- History ---
     history = session.get("history", [])
     if history:
-        st.divider()
         st.subheader("📜 Voting History")
         for i, entry in enumerate(reversed(history), 1):
             with st.expander(f"#{len(history) - i + 1} — {entry['label']}", expanded=False):

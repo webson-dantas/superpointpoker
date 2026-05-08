@@ -21,7 +21,7 @@ st.markdown("""
 <style>
     .block-container {
         max-width: 1100px;
-        padding-top: 2rem;
+        padding-top: 0.5rem;
         padding-bottom: 2rem;
     }
     [data-testid="stAppViewContainer"] {
