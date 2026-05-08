@@ -137,7 +137,7 @@ def render_session_view():
         # Max turtles (per-user preference)
         if "max_turtles" not in st.session_state:
             st.session_state.max_turtles = 5
-        st.number_input("🐢 Max Turtles", min_value=0, max_value=500, step=1, key="max_turtles")
+        st.number_input("🐢 Max Turtles", min_value=1, max_value=500, step=1, key="max_turtles")
 
         # Host-only configuration options
         if is_host:
@@ -228,6 +228,141 @@ def render_session_view():
     # Block voting UI if votes are revealed and block setting is on
     votes_blocked = session.get("block_vote_after_reveal", False) and session["votes_revealed"]
 
+    # --- 3D Vote Cards ---
+    ticket_label = session.get("ticket_label", "")
+    if ticket_label:
+        import re as _re
+        jira_match = _re.search(r'[A-Z][A-Z0-9]+-\d+', ticket_label)
+        jira_link = ""
+        if jira_match:
+            jira_key = jira_match.group(0)
+            jira_url = f"https://hexagon-mining.atlassian.net/browse/{jira_key}"
+            jira_link = f' <a href="{jira_url}" target="_blank" style="font-size:0.9rem;margin-left:0.8rem;vertical-align:middle;text-decoration:none;">🔗 View in Jira</a>'
+        st.markdown(
+            f'<div style="text-align:center;font-size:1.4rem;font-weight:600;margin-bottom:0.5rem;color:#ccc;">🎫 {html_mod.escape(ticket_label)}{jira_link}</div>',
+            unsafe_allow_html=True,
+        )
+    # Calculate shame mode for cards (pending voters ≤ 30%)
+    _voters = [p for p in session["participants"].values()
+               if p["role"] in ("Dev", "QA", "PO") or (p["role"] == "Hoster" and hoster_votes)]
+    _total = len(_voters)
+    _pending = [p for p in _voters if p["vote"] is None]
+    _pending_ratio = len(_pending) / _total if _total > 0 else 1.0
+    _shame = 0 < _pending_ratio <= 0.3 and not session["votes_revealed"]
+
+    card_parts = []
+    for pid, pinfo in session["participants"].items():
+        prole = pinfo['role']
+        if prole == "Observer" or (prole == "Hoster" and not hoster_votes):
+            continue
+        esc_name = html_mod.escape(pinfo['name'])
+        vote = pinfo['vote']
+        has_voted = vote is not None
+        if has_voted:
+            vd = "☕" if vote == "null" else html_mod.escape(str(vote))
+        else:
+            vd = ""
+        voted_cls = "" if has_voted else " spp-pending"
+        flip_cls = " spp-card-flipped" if (has_voted and session["votes_revealed"]) else ""
+        back_emoji = "🐢" if (_shame and not has_voted) else "❓"
+        card_parts.append(
+            f'<div class="spp-cw"><div class="spp-card{voted_cls}{flip_cls}" data-vote="{1 if has_voted else 0}">'
+            f'<div class="spp-cf spp-cb">{back_emoji}</div>'
+            f'<div class="spp-cf spp-cfr">{vd}</div>'
+            f'</div><div class="spp-cn">{esc_name}</div></div>'
+        )
+
+    if card_parts:
+        _CARD_CSS = """<style>
+.spp-cards-row { display:flex; flex-wrap:wrap; gap:1.2rem; justify-content:center; margin:1.5rem 0; perspective:1200px; }
+.spp-cw { text-align:center; }
+.spp-card { width:90px; height:130px; position:relative; transform-style:preserve-3d; transition:transform 0.8s ease; margin:0 auto; }
+.spp-card-flipped { transform:rotateY(180deg); }
+.spp-cf { position:absolute; width:100%; height:100%; backface-visibility:hidden; -webkit-backface-visibility:hidden; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.4); }
+.spp-cb { background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(255,255,255,0.04) 5px,rgba(255,255,255,0.04) 10px), linear-gradient(135deg,#667eea,#764ba2); color:#fff; font-size:1.8rem; }
+.spp-cb::before { content:''; position:absolute; inset:8px; border:2px solid rgba(255,255,255,0.2); border-radius:6px; pointer-events:none; }
+.spp-pending .spp-cb { background:linear-gradient(135deg,#3a3a5a,#2a2a4a); opacity:.7; }
+.spp-pending .spp-cb::before { border-color:rgba(255,255,255,0.1); }
+.spp-cfr { background:linear-gradient(145deg,#fafafa,#e0e0e0); color:#222; transform:rotateY(180deg); font-size:2rem; border:2px solid #bbb; }
+.spp-card[data-vote="0"] .spp-cfr { background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(255,255,255,0.04) 5px,rgba(255,255,255,0.04) 10px), linear-gradient(135deg,#667eea,#764ba2); color:#fff; font-size:1.8rem; border:none; }
+.spp-card[data-vote="0"] .spp-cfr::before { content:'❓'; }
+.spp-pending .spp-cfr { background:linear-gradient(135deg,#3a3a5a,#2a2a4a); opacity:.7; border:none; }
+.spp-pending .spp-cfr::before { content:'❓'; }
+.spp-cn { font-size:.8rem; margin-top:.5rem; max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#aaa; }
+@keyframes spp-green-flash { 0%{box-shadow:0 0 0 0 rgba(34,197,94,0.7)} 50%{box-shadow:0 0 20px 8px rgba(34,197,94,0.5)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+.spp-card-voted .spp-cb { animation:spp-green-flash 0.8s ease; border-radius:10px; }
+</style>"""
+        rev_attr = "true" if session["votes_revealed"] else "false"
+        st.markdown(
+            _CARD_CSS + f'\n<div class="spp-cards-row" data-revealed="{rev_attr}">{"".join(card_parts)}</div>',
+            unsafe_allow_html=True,
+        )
+        from streamlit.components.v1 import html as _card_js
+        _revealed_js = "true" if session["votes_revealed"] else "false"
+        _card_js(f"""<script>
+(function() {{
+    var d = window.parent.document;
+    var isRev = {_revealed_js};
+    setTimeout(function() {{
+        var c = d.querySelector('.spp-cards-row');
+        if (!c) return;
+        var wasRev = d._sppCardsRevealed || false;
+        var votedCards = c.querySelectorAll('.spp-card[data-vote="1"]');
+        var allCards = c.querySelectorAll('.spp-card');
+        // Track previously voted cards to detect new votes (green flash)
+        var prev = d._sppVotedSet || {{}};
+        var cur = {{}};
+        allCards.forEach(function(el, i) {{
+            var name = el.parentElement.querySelector('.spp-cn');
+            var key = name ? name.textContent : i;
+            if (el.dataset.vote === '1') {{
+                cur[key] = true;
+                if (!prev[key]) el.classList.add('spp-card-voted');
+            }}
+        }});
+        d._sppVotedSet = cur;
+        c.querySelectorAll('.spp-card-voted').forEach(function(el) {{
+            el.addEventListener('animationend', function() {{ el.classList.remove('spp-card-voted'); }}, {{once:true}});
+        }});
+        if (isRev && !wasRev) {{
+            // First reveal: cards already have spp-card-flipped from HTML.
+            // Remove it instantly, then stagger-add for animation.
+            votedCards.forEach(function(el) {{
+                el.style.transition = 'none';
+                el.classList.remove('spp-card-flipped');
+            }});
+            // Force reflow
+            c.offsetHeight;
+            votedCards.forEach(function(el) {{
+                el.style.transition = '';
+            }});
+            votedCards.forEach(function(el, i) {{
+                setTimeout(function() {{ el.classList.add('spp-card-flipped'); }}, i * 150);
+            }});
+            d._sppCardsRevealed = true;
+        }} else if (isRev) {{
+            // Already revealed (autorefresh): HTML already has spp-card-flipped, nothing to do
+        }} else if (wasRev) {{
+            // Just cleared: cards come without spp-card-flipped from HTML.
+            // Add it instantly (so they appear still flipped), then stagger-remove for animation.
+            allCards.forEach(function(el) {{
+                el.style.transition = 'none';
+                el.classList.add('spp-card-flipped');
+            }});
+            c.offsetHeight;
+            allCards.forEach(function(el) {{
+                el.style.transition = '';
+            }});
+            allCards.forEach(function(el, i) {{
+                setTimeout(function() {{ el.classList.remove('spp-card-flipped'); }}, i * 150);
+            }});
+            d._sppCardsRevealed = false;
+            d._sppVotedSet = {{}};
+        }}
+    }}, 50);
+}})();
+</script>""", height=0)
+
     if can_vote and votes_blocked:
         st.subheader("Cast Your Vote")
         st.warning("🔒 Voting is locked — votes have been revealed.")
@@ -270,6 +405,7 @@ def render_session_view():
                     }
                     .spp-vote-row [data-testid="stColumn"] [data-testid="stButton"] > button p {
                         font-size: 2rem !important;
+                        white-space: nowrap !important;
                     }
                 `;
                 doc.head.appendChild(style);

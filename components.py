@@ -43,15 +43,26 @@ def _inject_egg_click():
     <script>
     (function() {
         const doc = window.parent.document;
-        // Hide the spawn_turtle button
+        // Inject persistent CSS to hide the spawn_turtle button
+        if (!doc.getElementById('spp-egg-hide')) {
+            const style = doc.createElement('style');
+            style.id = 'spp-egg-hide';
+            style.textContent = 'button[kind="secondary"]:has(p)  { /* fallback */ }';
+            doc.head.appendChild(style);
+        }
+        // Hide the spawn_turtle button by finding it
         const btns = doc.querySelectorAll('button');
         let targetBtn = null;
         for (const b of btns) {
             if (b.textContent.trim() === 'spawn_turtle') {
                 targetBtn = b;
-                // Hide the entire button container
+                // Hide the entire button container up to the block level
                 let el = b;
                 while (el && el.parentElement) {
+                    el.style.display = 'none';
+                    if (el.getAttribute && (el.getAttribute('data-testid') === 'stVerticalBlock' || el.getAttribute('data-testid') === 'stHorizontalBlock')) {
+                        break;
+                    }
                     if (el.getAttribute && el.getAttribute('data-testid') === 'stButton') {
                         el.style.display = 'none';
                         break;
@@ -63,12 +74,12 @@ def _inject_egg_click():
         }
         // Wire up the emoji
         const egg = doc.getElementById('spp-egg');
-        if (egg && targetBtn && !egg._bound) {
+        if (egg && targetBtn) {
             egg._bound = true;
             egg.style.cursor = 'pointer';
-            egg.addEventListener('click', function() {
+            egg.onclick = function() {
                 targetBtn.click();
-            });
+            };
         }
     })();
     </script>
