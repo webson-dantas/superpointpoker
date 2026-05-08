@@ -48,6 +48,11 @@ if "state_restored" not in st.session_state:
         st.session_state.user_id = cookies["spp_user_id"]
     if cookies.get("spp_session"):
         st.session_state.current_session = cookies["spp_session"]
+    if cookies.get("spp_max_turtles"):
+        try:
+            st.session_state.max_turtles = int(cookies["spp_max_turtles"])
+        except ValueError:
+            pass
 
 shared = get_shared_state()
 

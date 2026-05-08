@@ -66,8 +66,25 @@ def render_session_view():
     if st.session_state.user_name.strip():
         inject_localstorage_writer(st.session_state.user_name)
 
-    # Header
-    st.title(f"🃏 {session['name']}")
+    # Header — clickable 🃏 advances idle timer by 2 min (spawns a turtle)
+    # Hidden button triggered by clicking the emoji via JS
+    if st.button("spawn_turtle", key="spawn_turtle_btn"):
+        with shared["lock"]:
+            session["last_vote_time"] = session.get("last_vote_time", time.time()) - 120
+    import html as html_mod
+    safe_name = html_mod.escape(session['name'])
+    st.markdown(f"""
+    <style>
+    div[data-testid="stButton"]:has(button p:only-child) {{}}
+    #spp-spawn-btn-wrap {{ display: none; }}
+    </style>
+    <h1 style="margin:0;padding:0;">
+        <span id="spp-egg" style="cursor:default;user-select:none;">🃏</span> {safe_name}
+    </h1>
+    """, unsafe_allow_html=True)
+    # Inject JS via components.html so it runs in parent context
+    from components import _inject_egg_click
+    _inject_egg_click()
     col_info, col_link = st.columns([3, 2])
     with col_info:
         st.caption(f"Session ID: `{session_id}` • Your role: **{my_role}**")
@@ -99,47 +116,33 @@ def render_session_view():
                 clear_session_storage()
                 st.rerun()
 
-    # --- Role picker (non-host can change role without leaving) ---
-    available_roles = ["Dev", "QA", "PO", "Observer"]
-    if is_host:
-        available_roles = ["Hoster"] + available_roles
-    current_index = available_roles.index(my_role) if my_role in available_roles else 0
-    col_role, _ = st.columns([2, 4])
-    with col_role:
-        new_role = st.selectbox("Your role", available_roles, index=current_index, key="role_picker")
-    if new_role != my_role:
-        with shared["lock"]:
-            session["participants"][user_id]["role"] = new_role
-            # Clear vote if switching to a non-voting role
-            if new_role == "Observer":
-                session["participants"][user_id]["vote"] = None
-        st.rerun()
-
-    st.divider()
-
-    # --- Host Controls ---
-    if is_host:
-        st.subheader("Host Controls")
-
-        # Ticket label
-        current_label = session.get("ticket_label", "")
-        new_label = st.text_input("🎫 Current Ticket / Story", value=current_label, key="ticket_label_input", placeholder="e.g. JIRA-1234: User login flow")
-        if new_label != current_label:
+    # --- Session configuration (visible to all, host-only options gated) ---
+    with st.expander("⚙️ Session configuration", expanded=False):
+        # Role picker (all users)
+        available_roles = ["Dev", "QA", "PO", "Observer"]
+        if is_host:
+            available_roles = ["Hoster"] + available_roles
+        current_index = available_roles.index(my_role) if my_role in available_roles else 0
+        col_role, _ = st.columns([2, 4])
+        with col_role:
+            new_role = st.selectbox("Your role", available_roles, index=current_index, key="role_picker")
+        if new_role != my_role:
             with shared["lock"]:
-                session["ticket_label"] = new_label
+                session["participants"][user_id]["role"] = new_role
+                # Clear vote if switching to a non-voting role
+                if new_role == "Observer":
+                    session["participants"][user_id]["vote"] = None
+            st.rerun()
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("👁️ Reveal Votes", type="primary"):
-                reveal_votes(shared, session_id)
-                st.rerun()
-        with col2:
-            if st.button("🗑️ Clear Votes", type="secondary"):
-                clear_votes(shared, session_id)
-                st.rerun()
+        # Max turtles (per-user preference)
+        if "max_turtles" not in st.session_state:
+            st.session_state.max_turtles = 5
+        st.number_input("🐢 Max Turtles", min_value=0, max_value=500, step=1, key="max_turtles")
 
-        # Session configuration (collapsible)
-        with st.expander("⚙️ Session configuration", expanded=False):
+        # Host-only configuration options
+        if is_host:
+            st.markdown("---")
+
             # Averaging mode toggle
             current_separate = session.get("separate_qa", False)
             separate = st.checkbox("Separate Dev & QA averages", value=current_separate, key="separate_qa_checkbox")
@@ -190,6 +193,29 @@ def render_session_view():
             if new_buttons != current_buttons:
                 with shared["lock"]:
                     session["vote_buttons"] = new_buttons
+
+    st.divider()
+
+    # --- Host Controls ---
+    if is_host:
+        st.subheader("Host Controls")
+
+        # Ticket label
+        current_label = session.get("ticket_label", "")
+        new_label = st.text_input("🎫 Current Ticket / Story", value=current_label, key="ticket_label_input", placeholder="e.g. JIRA-1234: User login flow")
+        if new_label != current_label:
+            with shared["lock"]:
+                session["ticket_label"] = new_label
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("👁️ Reveal Votes", type="primary"):
+                reveal_votes(shared, session_id)
+                st.rerun()
+        with col2:
+            if st.button("🗑️ Clear Votes", type="secondary"):
+                clear_votes(shared, session_id)
+                st.rerun()
 
         st.divider()
 
@@ -384,13 +410,13 @@ def render_session_view():
                 with cols[3]:
                     st.write(f"Fibonacci: **{entry['fibonacci']}**" if entry['fibonacci'] is not None else "Fibonacci: —")
 
-    # --- DVD Bouncing Turtle (appears after 2 min of inactivity, multiplies every 2 min up to 5) ---
+    # --- DVD Bouncing Turtle (appears after 2 min of inactivity, multiplies every 2 min up to max) ---
+    max_turtles = st.session_state.get("max_turtles", 5)
     idle_seconds = time.time() - session.get("last_vote_time", time.time())
-    if idle_seconds > 120:  # 2 minutes
-        turtle_count = min(int(idle_seconds // 120), 5)
+    if idle_seconds > 120 and max_turtles > 0:
+        turtle_count = min(int(idle_seconds // 120), max_turtles)
         inject_turtle_animation(turtle_count)
     else:
-        # Remove any turtles when activity resumes
         cleanup_turtles()
 
 
