@@ -33,9 +33,11 @@ def render_session_view():
         st.rerun()
         return
 
-    # Keep session alive while anyone is viewing it
+    # Keep session alive while anyone is viewing it (throttled to every 5 min)
     import time as _time
-    session["last_activity"] = _time.time()
+    _now = _time.time()
+    if _now - session.get("last_activity", 0) > 300:
+        session["last_activity"] = _now
 
     # Auto-refresh every 2 seconds (reduces server load with many users)
     st_autorefresh(interval=2000, key="session_refresh")
