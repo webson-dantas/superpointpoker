@@ -4,6 +4,7 @@ import sys
 import logging
 
 from config import get_shared_state, get_cookies
+from state import cleanup_stale_sessions
 from views import render_session_view, render_lobby, render_join_via_link
 
 # Suppress harmless Windows ProactorEventLoop connection-reset noise
@@ -55,6 +56,9 @@ if "state_restored" not in st.session_state:
             pass
 
 shared = get_shared_state()
+
+# Auto-close sessions idle for more than 20 minutes
+cleanup_stale_sessions(shared)
 
 # Validate restored session still exists; clear if not
 if st.session_state.current_session:
