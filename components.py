@@ -1,6 +1,5 @@
 import html as html_module
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 def inject_localstorage_reader():
@@ -15,7 +14,7 @@ def inject_localstorage_writer(name):
     session_id = st.session_state.get("current_session") or ""
     max_turtles = st.session_state.get("max_turtles", 5)
     # Set cookies with 30-day expiry, SameSite=Lax for security
-    components.html(f"""
+    st.html(f"""
     <script>
     (function() {{
         const expires = new Date(Date.now() + 30*24*60*60*1000).toUTCString();
@@ -30,7 +29,7 @@ def inject_localstorage_writer(name):
 
 def clear_session_storage():
     """Remove the session cookie (on leave/close)."""
-    components.html("""
+    st.html("""
     <script>
     document.cookie = "spp_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     </script>
@@ -39,7 +38,7 @@ def clear_session_storage():
 
 def _inject_egg_click():
     """Hide the spawn_turtle button and wire the 🃏 emoji click to it."""
-    components.html("""
+    st.html("""
     <script>
     (function() {
         const doc = window.parent.document;
@@ -88,7 +87,7 @@ def _inject_egg_click():
 
 def cleanup_turtles():
     """Remove any turtle elements from the parent document."""
-    components.html("""
+    st.html("""
     <script>
     (function() {
         const doc = window.parent.document;
@@ -108,7 +107,7 @@ def cleanup_turtles():
 def inject_turtle_animation(turtle_count):
     """Inject bouncing turtle animation with collision physics.
     Preserves existing turtles and only adds/removes as needed."""
-    components.html(f"""
+    st.html(f"""
     <script>
     (function() {{
         const COUNT = {turtle_count};
