@@ -14,7 +14,7 @@ def inject_localstorage_writer(name):
     session_id = st.session_state.get("current_session") or ""
     max_turtles = st.session_state.get("max_turtles", 5)
     # Set cookies with 30-day expiry, SameSite=Lax for security
-    st.html(f"""
+    st.iframe(f"""
     <script>
     (function() {{
         const expires = new Date(Date.now() + 30*24*60*60*1000).toUTCString();
@@ -24,21 +24,21 @@ def inject_localstorage_writer(name):
         document.cookie = "spp_max_turtles={max_turtles}; path=/; expires=" + expires + "; SameSite=Lax";
     }})();
     </script>
-    """)
+    """, height=1)
 
 
 def clear_session_storage():
     """Remove the session cookie (on leave/close)."""
-    st.html("""
+    st.iframe("""
     <script>
     document.cookie = "spp_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     </script>
-    """)
+    """, height=1)
 
 
 def _inject_egg_click():
     """Hide the spawn_turtle button and wire the 🃏 emoji click to it."""
-    st.html("""
+    st.iframe("""
     <script>
     (function() {
         const doc = window.parent.document;
@@ -82,12 +82,12 @@ def _inject_egg_click():
         }
     })();
     </script>
-    """)
+    """, height=1)
 
 
 def cleanup_turtles():
     """Remove any turtle elements from the parent document."""
-    st.html("""
+    st.iframe("""
     <script>
     (function() {
         const doc = window.parent.document;
@@ -101,13 +101,13 @@ def cleanup_turtles():
         if (old) old.remove();
     })();
     </script>
-    """)
+    """, height=1)
 
 
 def inject_turtle_animation(turtle_count):
     """Inject bouncing turtle animation with collision physics.
     Preserves existing turtles and only adds/removes as needed."""
-    st.html(f"""
+    st.iframe(f"""
     <script>
     (function() {{
         const COUNT = {turtle_count};
@@ -284,4 +284,4 @@ def inject_turtle_animation(turtle_count):
         }}
     }})();
     </script>
-    """)
+    """, height=1)

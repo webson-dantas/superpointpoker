@@ -298,7 +298,7 @@ def render_session_view():
             unsafe_allow_html=True,
         )
         _revealed_js = "true" if session["votes_revealed"] else "false"
-        st.html(f"""<script>
+        st.iframe(f"""<script>
 (function() {{
     var d = window.parent.document;
     var isRev = {_revealed_js};
@@ -360,7 +360,7 @@ def render_session_view():
         }}
     }}, 50);
 }})();
-</script>""")
+</script>""", height=1)
 
     if can_vote and votes_blocked:
         st.subheader("Cast Your Vote")
@@ -384,7 +384,7 @@ def render_session_view():
                         pass  # skip invalid entries
 
         # Inject CSS for larger vote buttons (via components.html to reach parent document)
-        st.html("""
+        st.iframe("""
         <script>
         (function() {
             const doc = window.parent.document;
@@ -420,7 +420,7 @@ def render_session_view():
             }
         })();
         </script>
-        """)
+        """, height=1)
 
         cols = st.columns(len(vote_options)) if vote_options else []
         for i, option in enumerate(vote_options):
