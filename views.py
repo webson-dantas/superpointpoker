@@ -84,32 +84,13 @@ def render_session_view():
     """, unsafe_allow_html=True)
     # Inject JS via components.html so it runs in parent context
     from components import _inject_egg_click
-    _inject_egg_click()
+    _inject_egg_click(session_id)
     col_info, col_link = st.columns([3, 2])
     with col_info:
         st.caption(f"Session ID: `{session_id}` • Your role: **{my_role}**")
     with col_link:
-        join_url = f"?session={session_id}"
         if st.button("🔗 Copy session link", key="copy_link_btn"):
-            st.session_state._link_copied = True
-        if st.session_state.get("_link_copied"):
-            st.success("✅ Copied!")
-            st.session_state._link_copied = False
-        st.iframe(f"""<script>
-        (function() {{
-            var doc = window.parent.document;
-            var btn = Array.from(doc.querySelectorAll('button')).find(function(b) {{
-                return b.textContent.includes('Copy session link');
-            }});
-            if (btn && !btn._sppBound) {{
-                btn._sppBound = true;
-                btn.addEventListener('click', function() {{
-                    var url = window.parent.location.origin + window.parent.location.pathname + '?session={session_id}';
-                    navigator.clipboard.writeText(url);
-                }});
-            }}
-        }})();
-        </script>""", height=1)
+            pass  # JS handles the clipboard copy
 
     # Leave / Close buttons
     if is_host:

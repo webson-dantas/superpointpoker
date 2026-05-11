@@ -36,58 +36,89 @@ def clear_session_storage():
     """, height=1)
 
 
-def _inject_egg_click():
-    """Hide the spawn_turtle button and wire the 🃏 emoji click to it."""
-    st.iframe("""
+def _inject_egg_click(session_id=""):
+    """Hide the spawn_turtle button, wire the 🃏 emoji click, and wire copy link button."""
+    st.iframe(f"""
     <script>
-    (function() {
+    (function() {{
         const doc = window.parent.document;
         // Hide all 1px script-only iframes
-        if (!doc.getElementById('spp-hide-iframes')) {
+        if (!doc.getElementById('spp-hide-iframes')) {{
             const s = doc.createElement('style');
             s.id = 'spp-hide-iframes';
-            s.textContent = 'iframe[height="1"], iframe[height="1px"] { display:none!important; } [data-testid="stIFrame"] { display:none!important; }';
+            s.textContent = 'iframe[height="1"], iframe[height="1px"] {{ display:none!important; }} [data-testid="stIFrame"] {{ display:none!important; }}';
             doc.head.appendChild(s);
-        }
+        }}
         // Inject persistent CSS to hide the spawn_turtle button
-        if (!doc.getElementById('spp-egg-hide')) {
+        if (!doc.getElementById('spp-egg-hide')) {{
             const style = doc.createElement('style');
             style.id = 'spp-egg-hide';
-            style.textContent = 'button[kind="secondary"]:has(p)  { /* fallback */ }';
+            style.textContent = 'button[kind="secondary"]:has(p)  {{ /* fallback */ }}';
             doc.head.appendChild(style);
-        }
+        }}
         // Hide the spawn_turtle button by finding it
         const btns = doc.querySelectorAll('button');
         let targetBtn = null;
-        for (const b of btns) {
-            if (b.textContent.trim() === 'spawn_turtle') {
+        for (const b of btns) {{
+            if (b.textContent.trim() === 'spawn_turtle') {{
                 targetBtn = b;
-                // Hide the entire button container up to the block level
                 let el = b;
-                while (el && el.parentElement) {
+                while (el && el.parentElement) {{
                     el.style.display = 'none';
-                    if (el.getAttribute && (el.getAttribute('data-testid') === 'stVerticalBlock' || el.getAttribute('data-testid') === 'stHorizontalBlock')) {
+                    if (el.getAttribute && (el.getAttribute('data-testid') === 'stVerticalBlock' || el.getAttribute('data-testid') === 'stHorizontalBlock')) {{
                         break;
-                    }
-                    if (el.getAttribute && el.getAttribute('data-testid') === 'stButton') {
+                    }}
+                    if (el.getAttribute && el.getAttribute('data-testid') === 'stButton') {{
                         el.style.display = 'none';
                         break;
-                    }
+                    }}
                     el = el.parentElement;
-                }
+                }}
                 break;
-            }
-        }
+            }}
+        }}
         // Wire up the emoji
         const egg = doc.getElementById('spp-egg');
-        if (egg && targetBtn) {
+        if (egg && targetBtn) {{
             egg._bound = true;
             egg.style.cursor = 'pointer';
-            egg.onclick = function() {
+            egg.onclick = function() {{
                 targetBtn.click();
-            };
-        }
-    })();
+            }};
+        }}
+        // Wire up Copy session link button (poll because button may render after this script)
+        var _copyPoll = setInterval(function() {{
+            const cb = Array.from(doc.querySelectorAll('button')).find(function(b) {{
+                return b.textContent.includes('Copy session link');
+            }});
+            if (!cb) return;
+            if (cb._sppCopyBound) {{ clearInterval(_copyPoll); return; }}
+            cb._sppCopyBound = true;
+            clearInterval(_copyPoll);
+            cb.addEventListener('click', function(e) {{
+                const url = 'https://superpointpoker.streamlit.app/?session={session_id}';
+                // Fallback copy using textarea in parent document
+                var ta = doc.createElement('textarea');
+                ta.value = url;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                doc.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                try {{ doc.execCommand('copy'); }} catch(ex) {{}}
+                doc.body.removeChild(ta);
+                // Also try modern API from parent context
+                try {{ window.parent.navigator.clipboard.writeText(url); }} catch(ex) {{}}
+                // Visual feedback
+                var pEl = cb.querySelector('p');
+                if (pEl) {{
+                    var orig = pEl.textContent;
+                    pEl.textContent = '✅ Link copied!';
+                    setTimeout(function() {{ pEl.textContent = orig; }}, 2000);
+                }}
+            }});
+        }}, 200);
+    }})();
     </script>
     """, height=1)
 
