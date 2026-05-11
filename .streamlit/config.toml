@@ -1,2 +1,4 @@
 [server]
+port = 8000
+address = "::"
 headless = true
