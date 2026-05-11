@@ -42,7 +42,7 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                 existing["heartbeat"] = time.time()
                 if client_ip:
                     existing["client_ip"] = client_ip
-                session["last_vote_time"] = time.time()
+                session["last_activity"] = time.time()
             else:
                 # Check for duplicate by name + IP (user reconnected with new session state)
                 old_uid = None
@@ -181,7 +181,7 @@ def cleanup_stale_sessions(state):
     with state["lock"]:
         stale = [
             sid for sid, s in state["sessions"].items()
-            if now - s.get("last_vote_time", now) > SESSION_TIMEOUT
+            if now - s.get("last_activity", s.get("last_vote_time", now)) > SESSION_TIMEOUT
         ]
         for sid in stale:
             del state["sessions"][sid]
