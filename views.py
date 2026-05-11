@@ -90,7 +90,26 @@ def render_session_view():
         st.caption(f"Session ID: `{session_id}` • Your role: **{my_role}**")
     with col_link:
         join_url = f"?session={session_id}"
-        st.markdown(f'<a href="{join_url}" target="_blank">🔗 Link to this session</a>', unsafe_allow_html=True)
+        if st.button("🔗 Copy session link", key="copy_link_btn"):
+            st.session_state._link_copied = True
+        if st.session_state.get("_link_copied"):
+            st.success("✅ Copied!")
+            st.session_state._link_copied = False
+        st.iframe(f"""<script>
+        (function() {{
+            var doc = window.parent.document;
+            var btn = Array.from(doc.querySelectorAll('button')).find(function(b) {{
+                return b.textContent.includes('Copy session link');
+            }});
+            if (btn && !btn._sppBound) {{
+                btn._sppBound = true;
+                btn.addEventListener('click', function() {{
+                    var url = window.parent.location.origin + window.parent.location.pathname + '?session={session_id}';
+                    navigator.clipboard.writeText(url);
+                }});
+            }}
+        }})();
+        </script>""", height=1)
 
     # Leave / Close buttons
     if is_host:
@@ -614,37 +633,6 @@ def render_lobby():
     if not st.session_state.user_name.strip():
         st.warning("Please enter your name to continue.")
         return
-
-    st.divider()
-
-    # --- Join Existing Session ---
-    st.subheader("Join an Existing Session")
-
-    sessions = shared["sessions"]
-    if not sessions:
-        st.info("No active sessions yet.")
-    else:
-        role = st.selectbox("Your role", ["Dev", "QA", "PO", "Observer"], index=0)
-
-        for sid, sdata in list(sessions.items()):
-            participant_count = len(sdata["participants"])
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write(f"**{sdata['name']}** — {participant_count} participant(s)")
-            with col2:
-                if st.button("Join", key=f"join_{sid}"):
-                    success = join_session(
-                        shared, sid,
-                        st.session_state.user_id,
-                        st.session_state.user_name.strip(),
-                        role,
-                        client_ip=get_client_ip(),
-                    )
-                    if success:
-                        st.session_state.current_session = sid
-                        st.rerun()
-                    else:
-                        st.error("Failed to join session.")
 
     st.divider()
 

@@ -42,6 +42,13 @@ def _inject_egg_click():
     <script>
     (function() {
         const doc = window.parent.document;
+        // Hide all 1px script-only iframes
+        if (!doc.getElementById('spp-hide-iframes')) {
+            const s = doc.createElement('style');
+            s.id = 'spp-hide-iframes';
+            s.textContent = 'iframe[height="1"], iframe[height="1px"] { display:none!important; } [data-testid="stIFrame"] { display:none!important; }';
+            doc.head.appendChild(s);
+        }
         // Inject persistent CSS to hide the spawn_turtle button
         if (!doc.getElementById('spp-egg-hide')) {
             const style = doc.createElement('style');
