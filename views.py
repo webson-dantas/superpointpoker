@@ -297,9 +297,8 @@ def render_session_view():
             _CARD_CSS + f'\n<div class="spp-cards-row" data-revealed="{rev_attr}">{"".join(card_parts)}</div>',
             unsafe_allow_html=True,
         )
-        from streamlit.components.v1 import html as _card_js
         _revealed_js = "true" if session["votes_revealed"] else "false"
-        _card_js(f"""<script>
+        st.html(f"""<script>
 (function() {{
     var d = window.parent.document;
     var isRev = {_revealed_js};
@@ -385,8 +384,7 @@ def render_session_view():
                         pass  # skip invalid entries
 
         # Inject CSS for larger vote buttons (via components.html to reach parent document)
-        from streamlit.components.v1 import html as components_html
-        components_html("""
+        st.html("""
         <script>
         (function() {
             const doc = window.parent.document;
