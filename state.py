@@ -42,6 +42,7 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                 existing["heartbeat"] = time.time()
                 if client_ip:
                     existing["client_ip"] = client_ip
+                session["last_vote_time"] = time.time()
             else:
                 # Check for duplicate by name + IP (user reconnected with new session state)
                 old_uid = None
@@ -169,3 +170,18 @@ def kick_participant(state, session_id, target_user_id):
         session = state["sessions"].get(session_id)
         if session and target_user_id in session["participants"]:
             del session["participants"][target_user_id]
+
+
+SESSION_TIMEOUT = 30 * 60  # 30 minutes
+
+
+def cleanup_stale_sessions(state):
+    """Remove sessions with no activity for more than 30 minutes."""
+    now = time.time()
+    with state["lock"]:
+        stale = [
+            sid for sid, s in state["sessions"].items()
+            if now - s.get("last_vote_time", now) > SESSION_TIMEOUT
+        ]
+        for sid in stale:
+            del state["sessions"][sid]
