@@ -24,7 +24,7 @@ def inject_localstorage_writer(name):
         document.cookie = "spp_max_turtles={max_turtles}; path=/; expires=" + expires + "; SameSite=Lax";
     }})();
     </script>
-    """, height=0)
+    """)
 
 
 def clear_session_storage():
@@ -33,7 +33,7 @@ def clear_session_storage():
     <script>
     document.cookie = "spp_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     </script>
-    """, height=0)
+    """)
 
 
 def _inject_egg_click():
@@ -82,7 +82,7 @@ def _inject_egg_click():
         }
     })();
     </script>
-    """, height=0)
+    """)
 
 
 def cleanup_turtles():
@@ -101,7 +101,7 @@ def cleanup_turtles():
         if (old) old.remove();
     })();
     </script>
-    """, height=0)
+    """)
 
 
 def inject_turtle_animation(turtle_count):
@@ -284,4 +284,4 @@ def inject_turtle_animation(turtle_count):
         }}
     }})();
     </script>
-    """, height=0)
+    """)

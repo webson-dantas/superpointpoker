@@ -360,7 +360,7 @@ def render_session_view():
         }}
     }}, 50);
 }})();
-</script>""", height=0)
+</script>""")
 
     if can_vote and votes_blocked:
         st.subheader("Cast Your Vote")
@@ -420,7 +420,7 @@ def render_session_view():
             }
         })();
         </script>
-        """, height=0)
+        """)
 
         cols = st.columns(len(vote_options)) if vote_options else []
         for i, option in enumerate(vote_options):
