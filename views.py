@@ -35,7 +35,7 @@ def render_session_view():
 
     # Keep session alive while anyone is viewing it
     import time as _time
-    session["last_vote_time"] = _time.time()
+    session["last_activity"] = _time.time()
 
     # Auto-refresh every 2 seconds (reduces server load with many users)
     st_autorefresh(interval=2000, key="session_refresh")
