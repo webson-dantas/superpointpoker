@@ -594,6 +594,11 @@ def render_lobby():
     st.title("🃏 Super Point Poker")
     st.caption("Planning Poker for agile teams - with love, by Webson <3")
 
+    # --- Usage Statistics ---
+    total_sessions = len(shared["sessions"])
+    total_users = sum(len(s["participants"]) for s in shared["sessions"].values())
+    st.markdown(f"📊 **{total_sessions}** active session{'s' if total_sessions != 1 else ''} · **{total_users}** user{'s' if total_users != 1 else ''} online")
+
     # Auto-refresh every 2 seconds
     st_autorefresh(interval=2000, key="lobby_refresh")
 
