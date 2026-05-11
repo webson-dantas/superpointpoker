@@ -74,6 +74,9 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                         "heartbeat": time.time(),
                         "client_ip": client_ip,
                     }
+                    # Un-reveal votes so the new joiner can vote without seeing results
+                    if session["votes_revealed"]:
+                        session["votes_revealed"] = False
             return True
     return False
 
