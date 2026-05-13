@@ -1,13 +1,13 @@
-import uuid
 import time
+import secrets
 from datetime import datetime
 
-from config import DEFAULT_VOTE_BUTTONS
+from config import DEFAULT_VOTE_BUTTONS, MAX_PARTICIPANTS_PER_SESSION, MAX_USERNAME_LENGTH
 from logic import calculate_averages
 
 
 def create_session(state, session_name, host_name, host_id, client_ip=None):
-    session_id = str(uuid.uuid4())[:8]
+    session_id = secrets.token_hex(6)  # 48 bits of entropy
     with state["lock"]:
         state["sessions"][session_id] = {
             "name": session_name,
@@ -31,6 +31,8 @@ def create_session(state, session_name, host_name, host_id, client_ip=None):
 
 
 def join_session(state, session_id, user_id, user_name, role, client_ip=None):
+    # Enforce name length limit
+    user_name = user_name[:MAX_USERNAME_LENGTH]
     with state["lock"]:
         if session_id in state["sessions"]:
             session = state["sessions"][session_id]
@@ -73,6 +75,9 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                     if session["host_id"] == old_uid:
                         session["host_id"] = user_id
                 else:
+                    # Enforce participant limit
+                    if len(session["participants"]) >= MAX_PARTICIPANTS_PER_SESSION:
+                        return False
                     session["participants"][user_id] = {
                         "name": user_name,
                         "role": role,

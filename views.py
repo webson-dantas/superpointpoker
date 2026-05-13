@@ -2,7 +2,11 @@ import time
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-from config import get_shared_state, DEFAULT_VOTE_BUTTONS, get_client_ip
+from config import (
+    get_shared_state, DEFAULT_VOTE_BUTTONS, get_client_ip,
+    MAX_USERNAME_LENGTH, MAX_SESSION_NAME_LENGTH, MAX_TICKET_LABEL_LENGTH,
+    MAX_VOTE_BUTTONS_LENGTH, MAX_PARTICIPANTS_PER_SESSION, MAX_SESSIONS_PER_USER,
+)
 from logic import calculate_averages
 from state import (
     cast_vote, reveal_votes, clear_votes,
@@ -189,7 +193,7 @@ def render_session_view():
             vb_version = st.session_state.get("_vb_version", 0)
             btn_col1, btn_col2 = st.columns([4, 1])
             with btn_col1:
-                new_buttons = st.text_input("Vote options", value=current_buttons, key=f"vote_buttons_input_{vb_version}", label_visibility="collapsed")
+                new_buttons = st.text_input("Vote options", value=current_buttons, key=f"vote_buttons_input_{vb_version}", label_visibility="collapsed", max_chars=MAX_VOTE_BUTTONS_LENGTH)
             with btn_col2:
                 if st.button("↩️ Default", key="revert_vote_buttons"):
                     with shared["lock"]:
@@ -198,7 +202,7 @@ def render_session_view():
                     st.rerun()
             if new_buttons != current_buttons:
                 with shared["lock"]:
-                    session["vote_buttons"] = new_buttons
+                    session["vote_buttons"] = new_buttons[:MAX_VOTE_BUTTONS_LENGTH]
 
     # --- Host Controls ---
     if is_host:
@@ -206,10 +210,10 @@ def render_session_view():
 
         # Ticket label
         current_label = session.get("ticket_label", "")
-        new_label = st.text_input("🎫 Current Ticket / Story", value=current_label, key="ticket_label_input", placeholder="e.g. JIRA-1234: User login flow")
+        new_label = st.text_input("🎫 Current Ticket / Story", value=current_label, key="ticket_label_input", placeholder="e.g. JIRA-1234: User login flow", max_chars=MAX_TICKET_LABEL_LENGTH)
         if new_label != current_label:
             with shared["lock"]:
-                session["ticket_label"] = new_label
+                session["ticket_label"] = new_label[:MAX_TICKET_LABEL_LENGTH]
 
         col1, col2 = st.columns(2)
         with col1:
@@ -614,9 +618,10 @@ def render_lobby():
         "Display name (emojis welcome! e.g. 🚀 Carlos)",
         value=st.session_state.user_name,
         key="name_input",
+        max_chars=MAX_USERNAME_LENGTH,
     )
     if name != st.session_state.user_name:
-        st.session_state.user_name = name
+        st.session_state.user_name = name[:MAX_USERNAME_LENGTH]
 
     # Save state to cookies whenever name is set
     if st.session_state.user_name.strip():
@@ -630,19 +635,24 @@ def render_lobby():
 
     # --- Create Session ---
     st.subheader("Create a New Session")
-    session_name = st.text_input("Session name", placeholder="Sprint 42 Planning")
+    session_name = st.text_input("Session name", placeholder="Sprint 42 Planning", max_chars=MAX_SESSION_NAME_LENGTH)
     if st.button("🎉 Create Session", type="primary"):
-        if session_name.strip():
-            sid = create_session(
-                shared, session_name.strip(),
-                st.session_state.user_name.strip(),
-                st.session_state.user_id,
-                client_ip=get_client_ip(),
-            )
-            st.session_state.current_session = sid
-            st.rerun()
-        else:
+        if not session_name.strip():
             st.error("Please enter a session name.")
+        else:
+            # Rate limit: max sessions per user
+            user_sessions = sum(1 for s in shared["sessions"].values() if s["host_id"] == st.session_state.user_id)
+            if user_sessions >= MAX_SESSIONS_PER_USER:
+                st.error(f"You can host at most {MAX_SESSIONS_PER_USER} sessions at a time.")
+            else:
+                sid = create_session(
+                    shared, session_name.strip()[:MAX_SESSION_NAME_LENGTH],
+                    st.session_state.user_name.strip(),
+                    st.session_state.user_id,
+                    client_ip=get_client_ip(),
+                )
+                st.session_state.current_session = sid
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -667,7 +677,7 @@ def render_join_via_link(session_id):
 
     st.divider()
 
-    name = st.text_input("Your display name (emojis welcome!)", value=st.session_state.user_name, key="join_link_name", placeholder="e.g. 🚀 Carlos")
+    name = st.text_input("Your display name (emojis welcome!)", value=st.session_state.user_name, key="join_link_name", placeholder="e.g. 🚀 Carlos", max_chars=MAX_USERNAME_LENGTH)
     role = st.selectbox("Your role", ["Dev", "QA", "PO", "Observer"], index=0, key="join_link_role")
 
     if st.button("🎉 Join Session", type="primary"):

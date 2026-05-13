@@ -1,5 +1,7 @@
 import html as html_module
+import json
 import streamlit as st
+from urllib.parse import quote
 
 
 def inject_localstorage_reader():
@@ -9,19 +11,20 @@ def inject_localstorage_reader():
 
 def inject_localstorage_writer(name):
     """Save nickname, user_id, current session, and preferences to cookies (persistent across refresh)."""
-    safe_name = html_module.escape(name, quote=True)
-    uid = st.session_state.user_id
-    session_id = st.session_state.get("current_session") or ""
-    max_turtles = st.session_state.get("max_turtles", 5)
-    # Set cookies with 30-day expiry, SameSite=Lax for security
+    # Use URL-encoding for cookie values to prevent cookie injection
+    safe_name = quote(name, safe='')
+    uid = quote(st.session_state.user_id, safe='')
+    session_id = quote(st.session_state.get("current_session") or "", safe='')
+    max_turtles = int(st.session_state.get("max_turtles", 5))
+    # Set cookies with 30-day expiry, SameSite=Lax + Secure
     st.iframe(f"""
     <script>
     (function() {{
         const expires = new Date(Date.now() + 30*24*60*60*1000).toUTCString();
-        document.cookie = "spp_nickname={safe_name}; path=/; expires=" + expires + "; SameSite=Lax";
-        document.cookie = "spp_user_id={uid}; path=/; expires=" + expires + "; SameSite=Lax";
-        document.cookie = "spp_session={session_id}; path=/; expires=" + expires + "; SameSite=Lax";
-        document.cookie = "spp_max_turtles={max_turtles}; path=/; expires=" + expires + "; SameSite=Lax";
+        document.cookie = "spp_nickname={safe_name}; path=/; expires=" + expires + "; SameSite=Lax; Secure";
+        document.cookie = "spp_user_id={uid}; path=/; expires=" + expires + "; SameSite=Lax; Secure";
+        document.cookie = "spp_session={session_id}; path=/; expires=" + expires + "; SameSite=Lax; Secure";
+        document.cookie = "spp_max_turtles={max_turtles}; path=/; expires=" + expires + "; SameSite=Lax; Secure";
     }})();
     </script>
     """, height=1)
@@ -38,10 +41,12 @@ def clear_session_storage():
 
 def _inject_egg_click(session_id=""):
     """Hide the spawn_turtle button, wire the 🃏 emoji click, and wire copy link button."""
+    safe_session_id = json.dumps(session_id)
     st.iframe(f"""
     <script>
     (function() {{
         const doc = window.parent.document;
+        const sessionId = {safe_session_id};
         // Hide all 1px script-only iframes
         if (!doc.getElementById('spp-hide-iframes')) {{
             const s = doc.createElement('style');
@@ -96,7 +101,7 @@ def _inject_egg_click(session_id=""):
             cb._sppCopyBound = true;
             clearInterval(_copyPoll);
             cb.addEventListener('click', function(e) {{
-                const url = 'https://superpointpoker.streamlit.app/?session={session_id}';
+                const url = 'https://superpointpoker.streamlit.app/?session=' + encodeURIComponent(sessionId);
                 // Fallback copy using textarea in parent document
                 var ta = doc.createElement('textarea');
                 ta.value = url;
@@ -145,10 +150,11 @@ def cleanup_turtles():
 def inject_turtle_animation(turtle_count):
     """Inject bouncing turtle animation with collision physics.
     Preserves existing turtles and only adds/removes as needed."""
+    safe_count = int(turtle_count)
     st.iframe(f"""
     <script>
     (function() {{
-        const COUNT = {turtle_count};
+        const COUNT = {safe_count};
         const SIZE = 60;
         const doc = window.parent.document;
         const pw = window.parent;
