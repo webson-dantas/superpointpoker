@@ -678,7 +678,7 @@ def render_join_via_link(session_id):
             success = join_session(
                 shared, session_id,
                 st.session_state.user_id,
-                name.strip(),
+                st.session_state.user_name,
                 role,
                 client_ip=get_client_ip(),
             )
