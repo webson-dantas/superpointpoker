@@ -74,6 +74,9 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                     # If the old uid was the host, update host_id
                     if session["host_id"] == old_uid:
                         session["host_id"] = user_id
+                    # Un-reveal votes so returning joiner can't see results
+                    if session["votes_revealed"]:
+                        session["votes_revealed"] = False
                 else:
                     # Enforce participant limit
                     if len(session["participants"]) >= MAX_PARTICIPANTS_PER_SESSION:
