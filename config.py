@@ -11,6 +11,20 @@ VOTE_MODE_POINTS = "points"
 VOTE_MODE_HOURS = "hours"
 DEFAULT_VOTE_MODE = VOTE_MODE_POINTS
 
+# Rejoin code word pools (two funny words joined, e.g. "SoggyWaffle")
+REJOIN_ADJECTIVES = [
+    "Soggy", "Grumpy", "Sneaky", "Wobbly", "Cranky", "Spicy", "Sleepy", "Sassy",
+    "Clumsy", "Bouncy", "Cheeky", "Dizzy", "Fluffy", "Goofy", "Zesty", "Snazzy",
+    "Wonky", "Feisty", "Quirky", "Nifty", "Groggy", "Peppy", "Loopy", "Scruffy",
+    "Plucky", "Chunky", "Breezy", "Frisky", "Silly", "Jazzy",
+]
+REJOIN_NOUNS = [
+    "Waffle", "Wombat", "Pickle", "Noodle", "Muffin", "Penguin", "Gizmo", "Pretzel",
+    "Walrus", "Biscuit", "Llama", "Turnip", "Goblin", "Pancake", "Otter", "Dumpling",
+    "Narwhal", "Cactus", "Meerkat", "Bagel", "Platypus", "Nugget", "Marmot", "Taco",
+    "Pudding", "Yeti", "Gnome", "Weasel", "Burrito", "Doodle",
+]
+
 # Security limits
 MAX_USERNAME_LENGTH = 14
 MAX_SESSION_NAME_LENGTH = 100

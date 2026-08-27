@@ -268,6 +268,34 @@ def _render_participants_and_results(session, session_id, user_id, is_host):
             st.info("Votes not revealed yet.")
 
 
+def _render_welcome(code):
+    """First-join welcome: highlight the rejoin code, auto-advance after 3s or Skip."""
+    import html as _h
+    if "welcome_start" not in st.session_state:
+        st.session_state.welcome_start = time.time()
+    st_autorefresh(interval=1000, key="welcome_refresh")
+    elapsed = time.time() - st.session_state.welcome_start
+
+    st.markdown(
+        f'''<div style="text-align:center;padding:2.2rem 1rem 1rem;">
+        <div style="font-size:2rem;font-weight:800;margin-bottom:0.4rem;">🎉 You're in!</div>
+        <div style="color:#999;max-width:520px;margin:0 auto 1.3rem;">Save your <b>Rejoin Code</b> — type it on the join screen to reclaim your seat (and your vote) if the tab closes or refreshes.</div>
+        <div style="display:inline-block;font-size:2.4rem;font-weight:800;letter-spacing:1px;padding:0.8rem 1.8rem;border-radius:14px;background:linear-gradient(135deg,#3b82f6,#8b5cf6,#ef4444);color:#fff;box-shadow:0 6px 22px rgba(139,92,246,0.5);">{_h.escape(code)}</div>
+        </div>''',
+        unsafe_allow_html=True,
+    )
+    st.code(code, language=None)  # native copy button
+
+    remaining = max(0, 3 - int(elapsed))
+    _c1, _c2, _c3 = st.columns([2, 1, 2])
+    with _c2:
+        label = "Continue →" if remaining == 0 else f"Skip ({remaining}s)"
+        if st.button(label, type="primary", use_container_width=True) or elapsed >= 3:
+            st.session_state.show_welcome = False
+            st.session_state.pop("welcome_start", None)
+            st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # SESSION VIEW
 # ---------------------------------------------------------------------------
@@ -296,15 +324,16 @@ def render_session_view():
     my_info = session["participants"].get(user_id)
 
     if not my_info:
-        # Auto-rejoin: user refreshed and got a new session state but was previously in this session
-        # The IP-based dedup in join_session will merge with their old slot if possible
-        if st.session_state.user_name.strip():
+        # Auto-rejoin: try URL rejoin code first, then name/IP dedup fallback.
+        _rc = st.query_params.get("rc")
+        if _rc or st.session_state.user_name.strip():
             join_session(
                 shared, session_id,
                 user_id,
-                st.session_state.user_name.strip(),
+                st.session_state.user_name.strip() or "Guest",
                 "Dev",  # default role on rejoin
                 client_ip=get_client_ip(),
+                rejoin_code=_rc,
             )
             my_info = session["participants"].get(user_id)
 
@@ -316,6 +345,11 @@ def render_session_view():
         return
 
     my_role = my_info["role"]
+
+    # First-join welcome: show the rejoin code prominently, then auto-advance.
+    if st.session_state.get("show_welcome"):
+        _render_welcome(st.session_state.get("welcome_code", my_info.get("rejoin_code", "")))
+        return
 
     # Persist state to cookies so F5 restores the session
     if st.session_state.user_name.strip():
@@ -342,7 +376,13 @@ def render_session_view():
     _inject_egg_click(session_id)
     col_info, col_link = st.columns([3, 2])
     with col_info:
-        st.caption(f"Session ID: `{session_id}` • Your role: **{my_role}**")
+        _mycode = my_info.get("rejoin_code", "")
+        _show_rc = st.session_state.get("show_rc", False)
+        _code_disp = _mycode if _show_rc else "••••••"
+        st.caption(f"Session ID: `{session_id}` • Your role: **{my_role}** • Rejoin code: `{_code_disp}`")
+        if st.button("🙈 Hide code" if _show_rc else "👁️ Reveal my rejoin code", key="toggle_rc"):
+            st.session_state.show_rc = not _show_rc
+            st.rerun()
     with col_link:
         if st.button("🔗 Copy session link", key="copy_link_btn"):
             pass  # JS handles the clipboard copy
@@ -355,12 +395,14 @@ def render_session_view():
                 leave_session(shared, session_id, user_id)
                 st.session_state.current_session = None
                 clear_session_storage()
+                st.query_params.clear()
                 st.rerun()
         with col_close:
             if st.button("❌ Close"):
                 close_session(shared, session_id)
                 st.session_state.current_session = None
                 clear_session_storage()
+                st.query_params.clear()
                 st.rerun()
     else:
         col_leave, _ = st.columns([1, 5])
@@ -369,6 +411,7 @@ def render_session_view():
                 leave_session(shared, session_id, user_id)
                 st.session_state.current_session = None
                 clear_session_storage()
+                st.query_params.clear()
                 st.rerun()
 
     # --- Session configuration (visible to all, host-only options gated) ---
@@ -948,6 +991,11 @@ def render_lobby():
                     client_ip=get_client_ip(),
                 )
                 st.session_state.current_session = sid
+                _host_code = shared["sessions"][sid]["participants"][st.session_state.user_id].get("rejoin_code", "")
+                st.query_params["session"] = sid
+                st.query_params["rc"] = _host_code
+                st.session_state.show_welcome = True
+                st.session_state.welcome_code = _host_code
                 st.rerun()
 
 
@@ -967,6 +1015,30 @@ def render_join_via_link(session_id):
         st.rerun()
         return
 
+    # Auto-rejoin from URL rejoin code (survives F5 on hosts that lose session_state).
+    rc = st.query_params.get("rc")
+    if rc:
+        code_exists = any(p.get("rejoin_code", "").lower() == rc.strip().lower()
+                          for p in session["participants"].values())
+        if code_exists:
+            res = join_session(
+                shared, session_id, st.session_state.user_id,
+                st.session_state.user_name.strip() or "Guest", "Dev",
+                client_ip=get_client_ip(), rejoin_code=rc,
+            )
+            if res["ok"]:
+                st.session_state.current_session = session_id
+                st.query_params["session"] = session_id
+                st.query_params["rc"] = res["rejoin_code"]
+                st.rerun()
+                return
+        else:
+            # Stale/invalid code in URL: drop it and show the join form.
+            try:
+                del st.query_params["rc"]
+            except Exception:
+                pass
+
     st.title("🃏 Super Point Poker")
     st.subheader(f"Join session: **{session['name']}**")
     st.caption(f"Session ID: `{session_id}` • {len(session['participants'])} participant(s)")
@@ -975,25 +1047,30 @@ def render_join_via_link(session_id):
 
     name = st.text_input("Your display name (emojis welcome!)", value=st.session_state.user_name, key="join_link_name", placeholder="e.g. 🚀 Carlos", max_chars=MAX_USERNAME_LENGTH)
     role = st.selectbox("Your role", ["Dev", "QA", "PO", "Observer"], index=0, key="join_link_role")
+    rejoin_in = st.text_input("Rejoin code (optional)", key="join_link_rejoin", placeholder="e.g. SoggyWaffle — leave blank if it's your first time", max_chars=40)
 
     if st.button("🎉 Join Session", type="primary"):
-        if not name.strip():
-            st.error("Please enter your name.")
+        code = rejoin_in.strip() or None
+        if not name.strip() and not code:
+            st.error("Please enter your name (or a rejoin code).")
         else:
-            st.session_state.user_name = name.strip()
-            success = join_session(
-                shared, session_id,
-                st.session_state.user_id,
-                st.session_state.user_name,
-                role,
-                client_ip=get_client_ip(),
+            if name.strip():
+                st.session_state.user_name = name.strip()
+            res = join_session(
+                shared, session_id, st.session_state.user_id,
+                st.session_state.user_name.strip() or "Guest", role,
+                client_ip=get_client_ip(), rejoin_code=code,
             )
-            if success:
+            if res["ok"]:
                 st.session_state.current_session = session_id
-                st.query_params.clear()
+                st.query_params["session"] = session_id
+                st.query_params["rc"] = res["rejoin_code"]
+                if res["is_new"]:
+                    st.session_state.show_welcome = True
+                    st.session_state.welcome_code = res["rejoin_code"]
                 st.rerun()
             else:
-                st.error("Failed to join session.")
+                st.error("This session is full.")
 
     st.divider()
     if st.button("Go to Lobby instead"):

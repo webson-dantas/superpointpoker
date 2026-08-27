@@ -1,9 +1,28 @@
 import time
 import secrets
+import random
 from datetime import datetime
 
-from config import DEFAULT_VOTE_BUTTONS, DEFAULT_VOTE_MODE, VOTE_MODE_HOURS, MAX_PARTICIPANTS_PER_SESSION, MAX_USERNAME_LENGTH
+from config import (
+    DEFAULT_VOTE_BUTTONS, DEFAULT_VOTE_MODE, VOTE_MODE_HOURS,
+    MAX_PARTICIPANTS_PER_SESSION, MAX_USERNAME_LENGTH,
+    REJOIN_ADJECTIVES, REJOIN_NOUNS,
+)
 from logic import calculate_averages, calculate_hours
+
+
+def _generate_rejoin_code(existing_codes):
+    """Return a unique two-word CamelCase code (e.g. 'SoggyWaffle')."""
+    code = random.choice(REJOIN_ADJECTIVES) + random.choice(REJOIN_NOUNS)
+    for _ in range(50):
+        if code.lower() not in existing_codes:
+            return code
+        code = random.choice(REJOIN_ADJECTIVES) + random.choice(REJOIN_NOUNS)
+    return code  # accept rare collision after many tries
+
+
+def _session_codes(session):
+    return {p.get("rejoin_code", "").lower() for p in session["participants"].values()}
 
 
 def create_session(state, session_name, host_name, host_id, client_ip=None):
@@ -13,7 +32,7 @@ def create_session(state, session_name, host_name, host_id, client_ip=None):
             "name": session_name,
             "host_id": host_id,
             "participants": {
-                host_id: {"name": host_name, "role": "Hoster", "vote": None, "heartbeat": time.time(), "client_ip": client_ip}
+                host_id: {"name": host_name, "role": "Hoster", "vote": None, "heartbeat": time.time(), "client_ip": client_ip, "rejoin_code": _generate_rejoin_code(set())}
             },
             "votes_revealed": False,
             "ticket_label": "",
@@ -31,12 +50,34 @@ def create_session(state, session_name, host_name, host_id, client_ip=None):
     return session_id
 
 
-def join_session(state, session_id, user_id, user_name, role, client_ip=None):
+def join_session(state, session_id, user_id, user_name, role, client_ip=None, rejoin_code=None):
     # Enforce name length limit
     user_name = user_name[:MAX_USERNAME_LENGTH]
+    fail = {"ok": False, "is_new": False, "rejoin_code": None}
     with state["lock"]:
         if session_id in state["sessions"]:
             session = state["sessions"][session_id]
+
+            # 0. Explicit rejoin code takeover (highest precedence)
+            if rejoin_code:
+                rc_norm = rejoin_code.strip().lower()
+                match_uid = next((pid for pid, p in session["participants"].items()
+                                  if p.get("rejoin_code", "").lower() == rc_norm), None)
+                if match_uid is not None:
+                    if match_uid != user_id:
+                        old = session["participants"].pop(match_uid)
+                        old["heartbeat"] = time.time()
+                        if client_ip:
+                            old["client_ip"] = client_ip
+                        session["participants"][user_id] = old  # preserve name/role/vote/code
+                        if session["host_id"] == match_uid:
+                            session["host_id"] = user_id
+                    else:
+                        session["participants"][user_id]["heartbeat"] = time.time()
+                    session["last_activity"] = time.time()
+                    return {"ok": True, "is_new": False, "rejoin_code": session["participants"][user_id].get("rejoin_code")}
+                # invalid code -> fall through to normal join (creates a new user)
+
             existing = session["participants"].get(user_id)
             if existing:
                 # Reconnect with same user_id: update name/role/heartbeat, preserve vote
@@ -45,7 +86,10 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                 existing["heartbeat"] = time.time()
                 if client_ip:
                     existing["client_ip"] = client_ip
+                if not existing.get("rejoin_code"):
+                    existing["rejoin_code"] = _generate_rejoin_code(_session_codes(session))
                 session["last_activity"] = time.time()
+                return {"ok": True, "is_new": False, "rejoin_code": existing["rejoin_code"]}
             else:
                 # Check for duplicate by name + IP (user reconnected with new session state)
                 old_uid = None
@@ -66,6 +110,7 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                         "vote": old_data["vote"],
                         "heartbeat": time.time(),
                         "client_ip": client_ip,
+                        "rejoin_code": old_data.get("rejoin_code") or _generate_rejoin_code(_session_codes(session)),
                     }
                     # If the old uid was the host, update host_id
                     if session["host_id"] == old_uid:
@@ -73,22 +118,25 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
                     # Un-reveal votes so returning joiner can't see results
                     if session["votes_revealed"]:
                         session["votes_revealed"] = False
+                    return {"ok": True, "is_new": False, "rejoin_code": session["participants"][user_id]["rejoin_code"]}
                 else:
                     # Enforce participant limit
                     if len(session["participants"]) >= MAX_PARTICIPANTS_PER_SESSION:
-                        return False
+                        return fail
+                    code = _generate_rejoin_code(_session_codes(session))
                     session["participants"][user_id] = {
                         "name": user_name,
                         "role": role,
                         "vote": None,
                         "heartbeat": time.time(),
                         "client_ip": client_ip,
+                        "rejoin_code": code,
                     }
                     # Un-reveal votes so the new joiner can vote without seeing results
                     if session["votes_revealed"]:
                         session["votes_revealed"] = False
-            return True
-    return False
+                    return {"ok": True, "is_new": True, "rejoin_code": code}
+    return fail
 
 
 def cast_vote(state, session_id, user_id, vote_value):
