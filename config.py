@@ -6,6 +6,11 @@ from urllib.parse import unquote
 FIBONACCI = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89]
 DEFAULT_VOTE_BUTTONS = "0;1;2;3;5;8;13;21;X"
 
+# Voting modes
+VOTE_MODE_POINTS = "points"
+VOTE_MODE_HOURS = "hours"
+DEFAULT_VOTE_MODE = VOTE_MODE_POINTS
+
 # Security limits
 MAX_USERNAME_LENGTH = 14
 MAX_SESSION_NAME_LENGTH = 100

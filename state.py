@@ -2,8 +2,8 @@ import time
 import secrets
 from datetime import datetime
 
-from config import DEFAULT_VOTE_BUTTONS, MAX_PARTICIPANTS_PER_SESSION, MAX_USERNAME_LENGTH
-from logic import calculate_averages
+from config import DEFAULT_VOTE_BUTTONS, DEFAULT_VOTE_MODE, VOTE_MODE_HOURS, MAX_PARTICIPANTS_PER_SESSION, MAX_USERNAME_LENGTH
+from logic import calculate_averages, calculate_hours
 
 
 def create_session(state, session_name, host_name, host_id, client_ip=None):
@@ -22,6 +22,7 @@ def create_session(state, session_name, host_name, host_id, client_ip=None):
             "anyone_can_reveal": False,
             "block_vote_after_reveal": False,
             "vote_buttons": DEFAULT_VOTE_BUTTONS,
+            "voting_mode": DEFAULT_VOTE_MODE,
             "host_heartbeat": time.time(),
             "last_vote_time": time.time(),
             "history": [],
@@ -129,31 +130,62 @@ def reveal_votes(state, session_id):
             session["votes_revealed"] = True
 
 
+def set_voting_mode(state, session_id, mode):
+    """Switch voting mode and clear all votes (point/hour votes aren't compatible)."""
+    with state["lock"]:
+        session = state["sessions"].get(session_id)
+        if session and session.get("voting_mode") != mode:
+            session["voting_mode"] = mode
+            session["votes_revealed"] = False
+            session["last_vote_time"] = time.time()
+            for p in session["participants"].values():
+                p["vote"] = None
+
+
 def clear_votes(state, session_id):
     with state["lock"]:
         session = state["sessions"].get(session_id)
         if session:
             # Save current round to history before clearing
             label = session["ticket_label"] or "(No label)"
+            mode = session.get("voting_mode", "points")
             votes = {}
             hoster_votes_on = session.get("hoster_votes", False)
             for p in session["participants"].values():
                 is_voter = p["role"] in ("Dev", "QA", "PO") or (p["role"] == "Hoster" and hoster_votes_on)
                 if is_voter and p["vote"] is not None:
-                    vote_display = "Null" if p["vote"] == "null" else str(p["vote"])
+                    if p["vote"] == "null":
+                        vote_display = "Null"
+                    elif isinstance(p["vote"], dict):
+                        vote_display = f"{p['vote']['min']}–{p['vote']['max']}h"
+                    else:
+                        vote_display = str(p["vote"])
                     votes[p["name"]] = vote_display
             if votes:  # Only save if at least one vote was cast
-                separate_qa = session.get("separate_qa", False)
-                dev_avg, qa_avg, combined, fib = calculate_averages(session, separate_qa)
-                session["history"].append({
-                    "label": label,
-                    "votes": votes,
-                    "dev_avg": dev_avg,
-                    "qa_avg": qa_avg,
-                    "combined": combined,
-                    "fibonacci": fib,
-                    "separate_qa": separate_qa,
-                })
+                if mode == VOTE_MODE_HOURS:
+                    avg_min, avg_max, min_low, max_high, _ = calculate_hours(session)
+                    session["history"].append({
+                        "label": label,
+                        "votes": votes,
+                        "mode": VOTE_MODE_HOURS,
+                        "avg_min": avg_min,
+                        "avg_max": avg_max,
+                        "min_low": min_low,
+                        "max_high": max_high,
+                    })
+                else:
+                    separate_qa = session.get("separate_qa", False)
+                    dev_avg, qa_avg, combined, fib = calculate_averages(session, separate_qa)
+                    session["history"].append({
+                        "label": label,
+                        "votes": votes,
+                        "mode": "points",
+                        "dev_avg": dev_avg,
+                        "qa_avg": qa_avg,
+                        "combined": combined,
+                        "fibonacci": fib,
+                        "separate_qa": separate_qa,
+                    })
             # Clear current round
             session["votes_revealed"] = False
             session["ticket_label"] = ""

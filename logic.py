@@ -55,3 +55,28 @@ def calculate_averages(session, separate_qa=False):
         avg = sum(all_votes) / len(all_votes) if all_votes else None
         fib = closest_fibonacci(avg) if avg else None
         return avg, None, avg, fib
+
+
+def calculate_hours(session):
+    """Return (avg_min, avg_max, min_low, max_high, count) for Min/Max hours votes.
+
+    Only counts eligible voters whose vote is a {"min", "max"} dict; excludes
+    coffee ("null") and unvoted (None). Returns Nones/0 when no numeric votes.
+    """
+    hoster_votes = session.get("hoster_votes", False)
+
+    def is_voter(p):
+        return p["role"] in ("Dev", "QA", "PO") or (p["role"] == "Hoster" and hoster_votes)
+
+    pairs = [
+        p["vote"] for p in session["participants"].values()
+        if is_voter(p) and isinstance(p["vote"], dict)
+    ]
+    if not pairs:
+        return None, None, None, None, 0
+
+    mins = [pair["min"] for pair in pairs]
+    maxs = [pair["max"] for pair in pairs]
+    avg_min = sum(mins) / len(mins)
+    avg_max = sum(maxs) / len(maxs)
+    return avg_min, avg_max, min(mins), max(maxs), len(pairs)
