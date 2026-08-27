@@ -37,11 +37,6 @@ def join_session(state, session_id, user_id, user_name, role, client_ip=None):
     with state["lock"]:
         if session_id in state["sessions"]:
             session = state["sessions"][session_id]
-            # Easter egg: only when hoster is "Webson"
-            hoster_info = session["participants"].get(session["host_id"], {})
-            if "webson" in hoster_info.get("name", "").lower():
-                if "rafael" in user_name.lower() or "leafar" in user_name.lower():
-                    user_name = "🤓🤓Nerd Detected🤓🤓"
             existing = session["participants"].get(user_id)
             if existing:
                 # Reconnect with same user_id: update name/role/heartbeat, preserve vote
